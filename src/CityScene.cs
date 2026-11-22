@@ -1,211 +1,15 @@
-// Superhero screensaver for Windows.
-// The hero from the game flies over Big City at night: stars, the Moon, searchlights,
-// a plane going by, windows lighting up, cars on the street, and now and then a loop-the-loop.
-//
-// Build it with build.ps1 (it makes Superhero.scr). Windows runs a screensaver with:
-//   /s          full screen (on every monitor)
-//   /p <hwnd>   the little preview in Screen Saver Settings
-//   /c          settings (there aren't any yet)
-// Extras for trying it out:
-//   /w                     in a normal window
-//   /x <file.png> <w> <h> <seconds>   save a picture of the scene after that many seconds
+// Superhero: a caped hero flies over a big city at night. Stars, the Moon, searchlights,
+// windows lighting up, a plane going by, cars on the street, and now and then a loop-the-loop.
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Globalization;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyTitle("Superhero")]
-[assembly: System.Reflection.AssemblyProduct("Superhero screensaver")]
-
-namespace SuperheroSaver
+namespace Screensavers
 {
-    static class Program
-    {
-        [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
-
-        [STAThread]
-        static void Main(string[] args)
-        {
-            try { SetProcessDPIAware(); } catch { }
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-
-            string mode = "/c";
-            string arg = null;
-            if (args.Length > 0)
-            {
-                string a = args[0].Trim().ToLowerInvariant();
-                if (a.Length >= 2) mode = a.Substring(0, 2);
-                if (a.Length > 3 && a[2] == ':') arg = a.Substring(3);
-                else if (args.Length > 1) arg = args[1];
-            }
-
-            if (mode == "/s")
-            {
-                foreach (Screen s in Screen.AllScreens) new SaverForm(s.Bounds).Show();
-                Application.Run();
-            }
-            else if (mode == "/p")
-            {
-                long h;
-                if (arg == null || !long.TryParse(arg, out h)) return;
-                Application.Run(new SaverForm(new IntPtr(h)));
-            }
-            else if (mode == "/w")
-            {
-                Application.Run(new SaverForm());
-            }
-            else if (mode == "/x" && args.Length >= 5)
-            {
-                Shot(args[1], int.Parse(args[2]), int.Parse(args[3]), double.Parse(args[4], CultureInfo.InvariantCulture));
-            }
-            else
-            {
-                MessageBox.Show(
-                    "Superhero screensaver\n\nThe hero flies over Big City at night.\nThere are no settings yet: just sit back and watch.\n\nMove the mouse or press a key to stop it.",
-                    "Superhero", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-        }
-
-        // Saves one frame to a PNG, and how long a frame takes to draw next to it (.txt).
-        static void Shot(string path, int w, int h, double secs)
-        {
-            Scene sc = new Scene(w, h, 12345);
-            sc.LoopAt(secs - 1.3); // so the picture catches the hero partway around a loop-the-loop
-            double step = 1 / 30.0;
-            for (double tt = 0; tt < secs; tt += step) sc.Update(step);
-            using (Bitmap bmp = new Bitmap(w, h, PixelFormat.Format32bppRgb))
-            using (Graphics g = Graphics.FromImage(bmp))
-            {
-                sc.Draw(g);
-                bmp.Save(path, ImageFormat.Png);
-            }
-            // Time it on the same kind of off-screen buffer the screensaver window draws into (never shown)
-            using (Graphics desk = Graphics.FromHwnd(IntPtr.Zero))
-            using (BufferedGraphics bg = BufferedGraphicsManager.Current.Allocate(desk, new Rectangle(0, 0, w, h)))
-            {
-                Graphics g = bg.Graphics;
-                Stopwatch sw = Stopwatch.StartNew();
-                for (int i = 0; i < 60; i++) { sc.Update(step); sc.Draw(g); }
-                System.IO.File.WriteAllText(path + ".txt",
-                    "ms per frame: " + (sw.Elapsed.TotalMilliseconds / 60).ToString("0.0", CultureInfo.InvariantCulture) + "\n" + sc.Profile(g));
-            }
-        }
-    }
-
-    class SaverForm : Form
-    {
-        [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
-        [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
-
-        Scene scene;
-        readonly Stopwatch clock = Stopwatch.StartNew();
-        double last;
-        readonly Timer timer = new Timer();
-        readonly IntPtr parentHandle = IntPtr.Zero;
-        readonly bool closeOnInput;
-        Point mouseStart = new Point(int.MinValue, 0);
-
-        // Full screen on one monitor
-        public SaverForm(Rectangle bounds)
-        {
-            Setup();
-            closeOnInput = true;
-            Bounds = bounds;
-            TopMost = true;
-            Cursor.Hide();
-        }
-
-        // Inside the preview box in Screen Saver Settings
-        public SaverForm(IntPtr parent)
-        {
-            parentHandle = parent;
-            Setup();
-        }
-
-        // In a normal window, to try it out
-        public SaverForm()
-        {
-            Setup();
-            FormBorderStyle = FormBorderStyle.Sizable;
-            ShowInTaskbar = true;
-            StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(1280, 720);
-        }
-
-        void Setup()
-        {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
-                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque | ControlStyles.ResizeRedraw, true);
-            Text = "Superhero";
-            BackColor = Color.Black;
-            FormBorderStyle = FormBorderStyle.None;
-            ShowInTaskbar = false;
-            StartPosition = FormStartPosition.Manual;
-            timer.Interval = 15;
-            timer.Tick += delegate { Invalidate(); };
-            timer.Start();
-        }
-
-        protected override CreateParams CreateParams
-        {
-            get
-            {
-                CreateParams cp = base.CreateParams;
-                if (parentHandle != IntPtr.Zero)
-                {
-                    RECT r;
-                    GetClientRect(parentHandle, out r);
-                    cp.Parent = parentHandle;
-                    cp.Style = 0x40000000 | 0x10000000; // WS_CHILD | WS_VISIBLE
-                    cp.ExStyle = 0;
-                    cp.X = 0; cp.Y = 0;
-                    cp.Width = Math.Max(1, r.Right - r.Left);
-                    cp.Height = Math.Max(1, r.Bottom - r.Top);
-                }
-                return cp;
-            }
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            int w = Math.Max(1, ClientSize.Width), h = Math.Max(1, ClientSize.Height);
-            if (scene == null || scene.W != w || scene.H != h)
-            {
-                if (scene != null) scene.Dispose();
-                scene = new Scene(w, h, Environment.TickCount);
-                last = clock.Elapsed.TotalSeconds;
-            }
-            double now = clock.Elapsed.TotalSeconds;
-            double dt = Math.Min(0.1, Math.Max(0, now - last));
-            last = now;
-            scene.Update(dt);
-            scene.Draw(e.Graphics);
-        }
-
-        void Quit()
-        {
-            if (closeOnInput) Application.Exit();
-        }
-
-        protected override void OnMouseMove(MouseEventArgs e)
-        {
-            base.OnMouseMove(e);
-            if (!closeOnInput) return;
-            if (mouseStart.X == int.MinValue) { mouseStart = e.Location; return; }
-            if (Math.Abs(e.X - mouseStart.X) > 8 || Math.Abs(e.Y - mouseStart.Y) > 8) Quit();
-        }
-
-        protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); Quit(); }
-        protected override void OnKeyDown(KeyEventArgs e) { base.OnKeyDown(e); Quit(); }
-    }
-
     class Star { public float X, Y, R, Phase, Speed; public Color Tint; }
     class Cloud { public float X, Y, W, Speed; public Bitmap Img; }
     class Car { public float X, Speed; public int Lane; public Color Body; }
@@ -230,22 +34,13 @@ namespace SuperheroSaver
         public readonly List<Building> B = new List<Building>();
     }
 
-    class Scene : IDisposable
+    class CityScene : Scene
     {
-        [DllImport("gdi32.dll")] static extern bool BitBlt(IntPtr hdc, int x, int y, int w, int h, IntPtr src, int sx, int sy, int rop);
-        [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr hdc);
-        [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
-        [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr hdc);
-        [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
-        IntPtr skyDC = IntPtr.Zero, skyHbm = IntPtr.Zero, skyOld = IntPtr.Zero;
-
-        public readonly int W, H;
-        readonly float S;      // 1 at 1080 pixels tall
         readonly float V;      // how fast the city goes by, pixels a second
         readonly Random rng;
         double t;
 
-        readonly Bitmap sky;
+        readonly Surface sky;
         readonly Star[] stars;
         readonly Layer[] layers;
         readonly List<Cloud> clouds = new List<Cloud>();
@@ -276,24 +71,16 @@ namespace SuperheroSaver
         static int Clamp255(int v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
         static Color Shade(Color c, int d) { return Color.FromArgb(c.A, Clamp255(c.R + d), Clamp255(c.G + d), Clamp255(c.B + d)); }
 
-        public Scene(int w, int h, int seed)
+        public CityScene(int w, int h, int seed) : base(w, h)
         {
-            W = w; H = h;
-            S = h / 1080f;
             V = 240 * S;
             rng = new Random(seed);
             nextPlane = R(4, 10);
             nextShoot = R(3, 8);
             nextLoop = R(7, 12);
 
-            sky = MakeSky();
-            try
-            {
-                skyHbm = sky.GetHbitmap();
-                skyDC = CreateCompatibleDC(IntPtr.Zero);
-                skyOld = SelectObject(skyDC, skyHbm);
-            }
-            catch { skyDC = IntPtr.Zero; }
+            sky = new Surface(W, H);
+            PaintSky(sky.G);
 
             float mx = W * 0.78f, my = H * 0.2f, mr = H * 0.055f;
             stars = new Star[(int)Math.Min(600, 120 + W * H / 9000)];
@@ -337,10 +124,8 @@ namespace SuperheroSaver
             }
         }
 
-        public void Dispose()
+        public override void Dispose()
         {
-            if (skyDC != IntPtr.Zero) { SelectObject(skyDC, skyOld); DeleteDC(skyDC); }
-            if (skyHbm != IntPtr.Zero) DeleteObject(skyHbm);
             sky.Dispose();
             brush.Dispose();
             foreach (Cloud c in clouds) c.Img.Dispose();
@@ -349,10 +134,8 @@ namespace SuperheroSaver
 
         // ---------- making things ----------
 
-        Bitmap MakeSky()
+        void PaintSky(Graphics g)
         {
-            Bitmap bmp = new Bitmap(W, H, PixelFormat.Format32bppPArgb);
-            using (Graphics g = Graphics.FromImage(bmp))
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 Rectangle all = new Rectangle(-1, -1, W + 2, H + 2);
@@ -388,7 +171,6 @@ namespace SuperheroSaver
                         g.FillEllipse(crater, mx + c[0] * mr - c[2] * mr, my + c[1] * mr - c[2] * mr, c[2] * mr * 2, c[2] * mr * 2);
                 }
             }
-            return bmp;
         }
 
         Cloud MakeCloud(float x)
@@ -509,7 +291,7 @@ namespace SuperheroSaver
 
         // ---------- moving things ----------
 
-        public void Update(double dt)
+        public override void Update(double dt)
         {
             t += dt;
             float fdt = (float)dt;
@@ -570,7 +352,6 @@ namespace SuperheroSaver
             }
         }
 
-        public void LoopAt(double when) { nextLoop = when; }
 
         void HeroAt(double tt, out float x, out float y)
         {
@@ -588,7 +369,7 @@ namespace SuperheroSaver
 
         // ---------- drawing ----------
 
-        public void Draw(Graphics g)
+        public override void Draw(Graphics g)
         {
             g.CompositingQuality = CompositingQuality.HighSpeed;
             g.InterpolationMode = InterpolationMode.NearestNeighbor;
@@ -614,37 +395,6 @@ namespace SuperheroSaver
             float ang = (float)(Math.Atan2(dy, 110 * S + dx) * 180 / Math.PI);
             ang += (float)Math.Sin(t * 1.3) * 2;
             DrawHero(g, x, y, ang, H / 1000f);
-        }
-
-        public string Profile(Graphics g)
-        {
-            string[] names = { "sky", "stars", "clouds", "searchlights", "far city", "mid city", "near city", "road", "hero" };
-            double[] ms = new double[names.Length];
-            Stopwatch sw = new Stopwatch();
-            for (int n = 0; n < 30; n++)
-            {
-                Update(1 / 30.0);
-                for (int i = 0; i < names.Length; i++)
-                {
-                    sw.Restart();
-                    switch (i)
-                    {
-                        case 0: DrawSky(g); break;
-                        case 1: DrawStars(g); break;
-                        case 2: DrawClouds(g); break;
-                        case 3: DrawSearchlights(g); break;
-                        case 4: DrawLayer(g, layers[0]); break;
-                        case 5: DrawLayer(g, layers[1]); break;
-                        case 6: DrawLayer(g, layers[2]); break;
-                        case 7: DrawRoad(g); break;
-                        case 8: DrawHero(g, W / 2, H / 2, 0, H / 1000f); break;
-                    }
-                    ms[i] += sw.Elapsed.TotalMilliseconds / 30;
-                }
-            }
-            string s = "";
-            for (int i = 0; i < names.Length; i++) s += names[i] + " " + ms[i].ToString("0.00", CultureInfo.InvariantCulture) + "\n";
-            return s;
         }
 
         void DrawStars(Graphics g)
@@ -674,13 +424,7 @@ namespace SuperheroSaver
 
         void DrawSky(Graphics g)
         {
-            if (skyDC != IntPtr.Zero)
-            {
-                IntPtr hdc = g.GetHdc();
-                try { BitBlt(hdc, 0, 0, W, H, skyDC, 0, 0, 0x00CC0020); } // SRCCOPY
-                finally { g.ReleaseHdc(hdc); }
-            }
-            else g.DrawImageUnscaled(sky, 0, 0);
+            sky.DrawTo(g, 0, 0);
         }
 
         void DrawClouds(Graphics g)
@@ -708,7 +452,7 @@ namespace SuperheroSaver
 
         void Glow(Graphics g, float x, float y, float r, Color c)
         {
-            r = Math.Max(r, 1.2f);
+            r = Math.Max(r, 0.5f);
             brush.Color = Color.FromArgb(55, c);
             g.FillEllipse(brush, x - r * 3, y - r * 3, r * 6, r * 6);
             brush.Color = c;

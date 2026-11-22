@@ -62,7 +62,8 @@ namespace Screensavers
             BackColor = Bg;
             KeyPreview = true;
             ClientSize = new Size(Px(1000), Px(660));
-            icon = MakeIcon();
+            try { icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { icon = null; }
+            if (icon == null) icon = MakeIcon();
             Icon = icon;
 
             string display = PickFont("Segoe UI Variable Display"), text = PickFont("Segoe UI Variable Text");

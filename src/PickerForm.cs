@@ -435,18 +435,47 @@ namespace Screensavers
         void Install()
         {
             if (!Save()) return;
-            string exe = Application.ExecutablePath;
-            if (!exe.EndsWith(".scr", StringComparison.OrdinalIgnoreCase))
+            string scr = FindScr();
+            if (scr == null)
             {
-                MessageBox.Show(this, "Open Screensavers.scr (not a copy with another name) to set it as your screensaver.",
+                MessageBox.Show(this, "Couldn't find Screensavers.scr. Run the installer again, or right-click Screensavers.scr and choose Install.",
                                 "Screensavers", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            try { Process.Start("rundll32.exe", "desk.cpl,InstallScreenSaver \"" + exe + "\""); }
+            try { OpenScreenSaverSettings(scr); }
             catch (Exception ex)
             {
                 MessageBox.Show(this, "Couldn't open Screen Saver Settings: " + ex.Message, "Screensavers", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        // The picker may be running from Screensavers.exe (the Start menu shortcut), so look for the .scr:
+        // this file itself, the .scr next to it, or where the installer puts it. As a last resort, make one next to us.
+        public static string FindScr()
+        {
+            string me = Application.ExecutablePath;
+            if (me.EndsWith(".scr", StringComparison.OrdinalIgnoreCase)) return me;
+            string dir = System.IO.Path.GetDirectoryName(me);
+            string[] candidates =
+            {
+                System.IO.Path.Combine(dir, "Screensavers.scr"),
+                System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                       @"Programs\Windows 11 Screensaver\Screensavers.scr"),
+            };
+            foreach (string c in candidates) if (System.IO.File.Exists(c)) return c;
+            try
+            {
+                string copy = candidates[0];
+                System.IO.File.Copy(me, copy, true);
+                return copy;
+            }
+            catch { return null; }
+        }
+
+        // Same command Windows uses for right-click > Install (the path goes in without quotes)
+        public static void OpenScreenSaverSettings(string scr)
+        {
+            Process.Start("rundll32.exe", "desk.cpl,InstallScreenSaver " + scr);
         }
 
         static Icon MakeIcon()

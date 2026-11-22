@@ -45,7 +45,12 @@ namespace Screensavers
 
             Settings set = Settings.Load();
 
-            if (mode == "/s")
+            if (a0(args) == "/where" && args.Length >= 2)
+            {
+                // For testing: writes down which .scr "Set as Windows screensaver" would use
+                System.IO.File.WriteAllText(args[1], PickerForm.FindScr() ?? "(none)");
+            }
+            else if (mode == "/s")
             {
                 Cursor.Hide();
                 foreach (Screen s in Screen.AllScreens) new SaverForm(s.Bounds, set, Application.Exit).Show();

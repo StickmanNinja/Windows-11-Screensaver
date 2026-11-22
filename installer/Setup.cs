@@ -26,15 +26,15 @@ using Microsoft.Win32;
 
 [assembly: AssemblyTitle("Windows 11 Screensaver Setup")]
 [assembly: AssemblyProduct("Windows 11 Screensaver")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace ScreensaverSetup
 {
     static class Installer
     {
         public const string AppName = "Windows 11 Screensaver";
-        public const string Version = "1.0";
+        public const string Version = "1.1";
         const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Windows11Screensaver";
         const string SettingsKey = @"Software\Windows 11 Screensaver";
 
@@ -171,7 +171,7 @@ namespace ScreensaverSetup
         // Opens Windows' Screen Saver Settings with this screensaver picked; you choose the wait time and click OK there
         public static void OpenScreenSaverSettings()
         {
-            Process.Start("rundll32.exe", "desk.cpl,InstallScreenSaver \"" + Scr + "\"");
+            Process.Start("rundll32.exe", "desk.cpl,InstallScreenSaver " + Scr); // no quotes: same as Windows' right-click > Install
         }
 
         public static void OpenPicker()
